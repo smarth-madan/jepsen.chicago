@@ -8,7 +8,9 @@
             [jepsen.os.debian :as debian]
             [jepsen.control.util :as cu]
             [jepsen.generator :as gen]
-            [jepsen.util :refer [timeout]]))
+            [jepsen.checker :as checker]
+            [jepsen.util :refer [timeout]]
+            [knossos.model      :as model]))
 
 
 (defn db
@@ -37,24 +39,26 @@
     (setup! [_ test node]
         (let [conn (ChicagoClient. "10.24.25.188:2181,10.24.25.189:2181,10.25.145.56:2181,10.24.33.123:2181" 3)]
           (client conn)))
-        ;(.start conn)
-        ;(info node (. conn read (byte-array (map (comp byte int) "key0")))))
 
     (invoke! [this test op]
       (timeout 5000 (assoc op :type :info, :error :timeout)
                (case (:f op)
-                 :read (assoc op :type :ok, :value (String. (.get (. conn read (bytes (byte-array (map (comp byte int) "key0"))))))))))
+                 :read (assoc op :type :ok, :value (String. (.get (. conn read (bytes (byte-array (map (comp byte int) "key0")))))))
+                 :write (assoc op :type :ok, :value (. conn write (bytes (byte-array (map (comp byte int) (str "key" "12")))) (bytes (byte-array (map (comp byte int) (str "val" "12")))))
+                        ))))
 
     (teardown! [_ test])))
 
 (defn r   [_ _] {:type :invoke, :f :read, :value nil})
+(defn w   [_ _] {:type :invoke, :f :write, :value (rand-int 500)})
+
 
 (defn chicago-test
   [version]
   (assoc tests/noop-test
          :db (db version)
          :client (client nil)
-         :generator (->> r
+         :generator (->> (gen/mix [r w])
             (gen/stagger 1)
             (gen/clients)
-            (gen/time-limit 15))))
+            (gen/time-limit 5))))
